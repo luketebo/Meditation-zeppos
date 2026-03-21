@@ -12,7 +12,7 @@
     "vender": "zepp",
     "description": "empty application"
   },
-  "permissions": ["device:os.local_storage"],
+  "permissions": ["device:os.local_storage", "device:heart_rate", "device:os.device.info"],
   "runtime": {
     "apiVersion": {
       "compatible": "3.0.0",
@@ -27,7 +27,8 @@
           "pages": [
             "page/index",
             "page/select",
-            "page/meditation"
+            "page/meditation",
+            "page/health"
           ]
         },
         "app-side": {
