@@ -1,227 +1,256 @@
-import { createWidget, widget, align, prop } from '@zos/ui'
+import { createWidget, deleteWidget, widget, align, prop, setStatusBarVisible } from '@zos/ui'
 import { back, push } from '@zos/router'
 import { px } from '@zos/utils'
 import { setInterval, clearInterval } from '@zos/timer'
 import { create, id } from '@zos/media'
 import { getHeartRate } from '@zos/sensor'
 
-const W = 390, H = 390
+const W = 390
+const H = 390
 const TIMES = [10, 15, 20, 25]
 const DEFAULT_MUSIC = 'music/bell-meditation.mp3'
 
 function formatTime(seconds) {
-  const m = Math.floor(seconds / 60).toString().padStart(2, '0')
-  const s = (seconds % 60).toString().padStart(2, '0')
+  const safe = Math.max(0, seconds)
+  const m = Math.floor(safe / 60).toString().padStart(2, '0')
+  const s = (safe % 60).toString().padStart(2, '0')
   return `${m}:${s}`
 }
+
+setStatusBarVisible(false)
 
 Page({
   build() {
     const selectedIndex = globalThis.__selectedIndex ?? 0
-    let remaining = TIMES[selectedIndex] * 60
-    const totalDuration = TIMES[selectedIndex]
+    const totalSeconds = (TIMES[selectedIndex] || 10) * 60
+    let remaining = totalSeconds
     let isPaused = false
     let timer = null
 
-    // 健康数据收集
-    let heartRates = []
+    // Health data
+    const heartRates = []
     let maxHeartRate = 0
     let minHeartRate = 200
-    const startTime = new Date()
 
-    // 创建音频播放器
+    // Audio
     const player = create(id.PLAYER)
-    console.log('Audio player created')
     const musicFile = globalThis.selectedMusic || DEFAULT_MUSIC
     player.setSource(player.source.FILE, { file: musicFile })
-    console.log('Audio source set to', musicFile)
     player.addEventListener(player.event.PREPARE, (result) => {
-      console.log('Audio prepare event triggered, result:', result)
-      if (result) {
-        console.log('Audio prepare succeed, starting playback')
-        player.start()
-      } else {
-        console.log('Audio prepare fail')
-      }
+      if (result) player.start()
     })
     player.addEventListener(player.event.COMPLETE, () => {
-      console.log('Audio playback completed, restarting for loop')
       player.start()
     })
-    console.log('Calling player.prepare()')
     player.prepare()
 
+    // Background
     createWidget(widget.FILL_RECT, {
-      x: px(0), y: px(0),
-      w: px(W), h: px(H),
-      color: 0x0a0a1a,
+      x: px(0),
+      y: px(0),
+      w: px(W),
+      h: px(H),
+      color: 0x070b14,
     })
 
-    createWidget(widget.TEXT, {
-      x: px(0), y: px(40),
-      w: px(W), h: px(50),
+    // Top progress bar track
+    const progressX = px(45)
+    const progressY = px(36)
+    const progressWidthRaw = W - 90
+    const progressW = px(progressWidthRaw)
+    const progressH = px(8)
+    createWidget(widget.FILL_RECT, {
+      x: progressX,
+      y: progressY,
+      w: progressW,
+      h: progressH,
+      color: 0x14253e,
+    })
+    let progressFill = null
+
+    const statusText = createWidget(widget.TEXT, {
+      x: px(0),
+      y: px(56),
+      w: px(W),
+      h: px(34),
       text: '冥想中',
-      text_size: px(28),
-      color: 0x8888aa,
+      text_size: px(22),
+      color: 0x2b79ff,
       align_h: align.CENTER_H,
     })
 
-    createWidget(widget.STROKE_RECT, {
-      x: px(95), y: px(100),
-      w: px(200), h: px(200),
-      radius: px(100),
-      line_width: px(3),
-      color: 0x3a3a7a,
+    const subtitleText = createWidget(widget.TEXT, {
+      x: px(0),
+      y: px(98),
+      w: px(W),
+      h: px(32),
+      text: '放松身心',
+      text_size: px(20),
+      color: 0xf0f4fb,
+      align_h: align.CENTER_H,
     })
 
     const timeText = createWidget(widget.TEXT, {
-      x: px(95), y: px(100),
-      w: px(200), h: px(200),
+      x: px(0),
+      y: px(196),
+      w: px(W),
+      h: px(72),
       text: formatTime(remaining),
-      text_size: px(52),
-      color: 0xc0c0ff,
+      text_size: px(58),
+      color: 0xffffff,
       align_h: align.CENTER_H,
       align_v: align.CENTER_V,
     })
 
-    const hintText = createWidget(widget.TEXT, {
-      x: px(0), y: px(310),
-      w: px(W), h: px(30),
-      text: '专注呼吸，放松身心',
-      text_size: px(18),
-      color: 0x555577,
-      align_h: align.CENTER_H,
-    })
+    const btnSize = px(86)
+    const btnY = px(302)
+    const leftX = px(62)
+    const centerX = px((W - 86) / 2)
+    const rightX = px(W - 62 - 86)
+    const btnNormal = 0x2b2f38
+    const btnPress = 0x3a3f4a
 
-    // 暂停按钮
-    const pauseBtn = createWidget(widget.BUTTON, {
-      x: px(145), y: px(345),
-      w: px(100), h: px(44),
-      radius: px(22),
-      normal_color: 0x333355,
-      press_color: 0x444466,
-      text: '⏸ 暂停',
-      text_size: px(20),
-      color: 0xaaaacc,
-      click_func: () => {
-        if (remaining <= 0) return
-        isPaused = true
-        clearInterval(timer)
-        console.log('Pausing audio playback')
-        player.pause()
-        pauseBtn.setProperty(prop.VISIBLE, false)
-        cancelBtn.setProperty(prop.VISIBLE, true)
-        resumeBtn.setProperty(prop.VISIBLE, true)
-        hintText.setProperty(prop.TEXT, '已暂停')
-      },
-    })
-
-    // 取消按钮（默认隐藏）
     const cancelBtn = createWidget(widget.BUTTON, {
-      x: px(30), y: px(335),
-      w: px(130), h: px(55),
-      radius: px(27),
-      normal_color: 0x333333,
-      press_color: 0x555555,
-      text: '✕ 取消',
-      text_size: px(22),
+      x: leftX,
+      y: btnY,
+      w: btnSize,
+      h: btnSize,
+      radius: px(43),
+      normal_color: btnNormal,
+      press_color: btnPress,
+      text: 'X',
+      text_size: px(32),
       color: 0xffffff,
       click_func: () => {
         clearInterval(timer)
-        console.log('Stopping audio playback')
         player.stop()
         back()
       },
     })
     cancelBtn.setProperty(prop.VISIBLE, false)
 
-    // 继续按钮（默认隐藏）
+    const pauseBtn = createWidget(widget.BUTTON, {
+      x: centerX,
+      y: btnY,
+      w: btnSize,
+      h: btnSize,
+      radius: px(43),
+      normal_color: btnNormal,
+      press_color: btnPress,
+      text: '||',
+      text_size: px(30),
+      color: 0xffffff,
+      click_func: () => {
+        if (remaining <= 0) return
+        isPaused = true
+        player.pause()
+        pauseBtn.setProperty(prop.VISIBLE, false)
+        cancelBtn.setProperty(prop.VISIBLE, true)
+        resumeBtn.setProperty(prop.VISIBLE, true)
+        statusText.setProperty(prop.TEXT, '已暂停')
+        subtitleText.setProperty(prop.TEXT, '放松一下，再继续')
+      },
+    })
+
     const resumeBtn = createWidget(widget.BUTTON, {
-      x: px(230), y: px(335),
-      w: px(130), h: px(55),
-      radius: px(27),
-      normal_color: 0x5050cc,
-      press_color: 0x6060ee,
-      text: '▶ 继续',
-      text_size: px(22),
+      x: rightX,
+      y: btnY,
+      w: btnSize,
+      h: btnSize,
+      radius: px(43),
+      normal_color: btnNormal,
+      press_color: btnPress,
+      text: '>',
+      text_size: px(34),
       color: 0xffffff,
       click_func: () => {
         isPaused = false
+        player.start()
         cancelBtn.setProperty(prop.VISIBLE, false)
         resumeBtn.setProperty(prop.VISIBLE, false)
         pauseBtn.setProperty(prop.VISIBLE, true)
-        hintText.setProperty(prop.TEXT, '专注呼吸，放松身心')
-        console.log('Resuming audio playback')
-        player.start()
-        startTimer()
+        statusText.setProperty(prop.TEXT, '冥想中')
+        subtitleText.setProperty(prop.TEXT, '放松身心')
       },
     })
     resumeBtn.setProperty(prop.VISIBLE, false)
 
-    function startTimer() {
-      timer = setInterval(() => {
-        remaining -= 1
-        
-        // 每5秒收集一次心率数据
-        if ((totalDuration * 60 - remaining) % 5 === 0) {
-          try {
-            const currentHeartRate = getHeartRate()
-            if (currentHeartRate && currentHeartRate > 0) {
-              heartRates.push(currentHeartRate)
-              maxHeartRate = Math.max(maxHeartRate, currentHeartRate)
-              minHeartRate = Math.min(minHeartRate, currentHeartRate)
-              console.log('Heart rate collected:', currentHeartRate, 'bpm')
-            } else {
-              console.log('Heart rate not available:', currentHeartRate)
-            }
-          } catch (error) {
-            console.log('Error collecting heart rate:', error)
-          }
-        }
+    function updateProgressBar() {
+      const ratio = Math.max(0, remaining / totalSeconds)
+      const widthRaw = Math.max(0, Math.floor(progressWidthRaw * ratio))
+      if (progressFill) {
+        deleteWidget(progressFill)
+      }
+      progressFill = createWidget(widget.FILL_RECT, {
+        x: progressX,
+        y: progressY,
+        w: px(widthRaw),
+        h: progressH,
+        color: 0x2b79ff,
+      })
+    }
 
-        if (remaining <= 0) {
-          clearInterval(timer)
-          console.log('Meditation completed, stopping audio playback')
-          player.stop()
-          
-          // 计算并保存健康数据
-          const avgHeartRate = heartRates.length > 0 
-            ? Math.round(heartRates.reduce((a, b) => a + b, 0) / heartRates.length)
-            : 0
-          const caloriesBurned = Math.round(totalDuration * 3) // 每分钟约3卡路里
-          
-          const healthData = {
-            duration: totalDuration,
-            avgHeartRate: avgHeartRate,
-            startHeartRate: heartRates[0] || 0,
-            maxHeartRate: maxHeartRate,
-            minHeartRate: minHeartRate === 200 ? 0 : minHeartRate,
-            caloriesBurned: caloriesBurned,
-            timestamp: new Date().toLocaleString()
-          }
-          
-          globalThis.meditationHealthData = healthData
-          console.log('Health data saved:', healthData)
-          
-          timeText.setProperty(prop.TEXT, '完成 ✓')
-          hintText.setProperty(prop.TEXT, '冥想结束，做得很好！')
-          pauseBtn.setProperty(prop.VISIBLE, false)
-          
-          // 2秒后自动进入健康数据页面
-          let redirectCount = 0
-          const redirectTimer = setInterval(() => {
-            redirectCount++
-            if (redirectCount >= 2) {
-              clearInterval(redirectTimer)
-              push({ url: 'page/health' })
-            }
-          }, 1000)
-        } else {
-          timeText.setProperty(prop.TEXT, formatTime(remaining))
+    function finishMeditation() {
+      clearInterval(timer)
+      player.stop()
+
+      const avgHeartRate = heartRates.length
+        ? Math.round(heartRates.reduce((a, b) => a + b, 0) / heartRates.length)
+        : 0
+
+      globalThis.meditationHealthData = {
+        duration: totalSeconds / 60,
+        avgHeartRate,
+        startHeartRate: heartRates[0] || 0,
+        maxHeartRate,
+        minHeartRate: minHeartRate === 200 ? 0 : minHeartRate,
+        caloriesBurned: Math.round((totalSeconds / 60) * 3),
+        timestamp: new Date().toLocaleString(),
+      }
+
+      statusText.setProperty(prop.TEXT, '已完成')
+      subtitleText.setProperty(prop.TEXT, '做得很好，感受你的平静')
+      timeText.setProperty(prop.TEXT, '00:00')
+      pauseBtn.setProperty(prop.VISIBLE, false)
+      resumeBtn.setProperty(prop.VISIBLE, false)
+      cancelBtn.setProperty(prop.VISIBLE, false)
+      updateProgressBar()
+
+      let redirectCount = 0
+      const redirectTimer = setInterval(() => {
+        redirectCount += 1
+        if (redirectCount >= 2) {
+          clearInterval(redirectTimer)
+          push({ url: 'page/health' })
         }
       }, 1000)
     }
 
-    startTimer()
-  }
+    timer = setInterval(() => {
+      if (isPaused) return
+
+      remaining -= 1
+      timeText.setProperty(prop.TEXT, formatTime(remaining))
+      updateProgressBar()
+
+      if ((totalSeconds - remaining) % 5 === 0) {
+        try {
+          const hr = getHeartRate()
+          if (hr && hr > 0) {
+            heartRates.push(hr)
+            maxHeartRate = Math.max(maxHeartRate, hr)
+            minHeartRate = Math.min(minHeartRate, hr)
+          }
+        } catch (e) {
+          console.log('heart-rate read fail', e)
+        }
+      }
+
+      if (remaining <= 0) {
+        finishMeditation()
+      }
+    }, 1000)
+
+    updateProgressBar()
+  },
 })
